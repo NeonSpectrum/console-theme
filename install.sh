@@ -31,7 +31,20 @@ fail()  { printf '%b%s%b\n' "${RED}" "$*" "${RESET}" >&2; exit 1; }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-is_interactive() { [[ -t 0 ]]; }
+is_interactive() {
+  [[ -t 0 ]] || { [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; }
+}
+
+read_tty() {
+  local __var="${1:?}"
+  if [[ -r /dev/tty ]]; then
+    IFS= read -r "$__var" </dev/tty
+  elif [[ -t 0 ]]; then
+    IFS= read -r "$__var"
+  else
+    fail "Cannot read input: no terminal available. Set SHELL_CHOICE or ZSH_PLUGINS."
+  fi
+}
 
 is_root() { [[ "$(id -u)" -eq 0 ]]; }
 
@@ -284,7 +297,7 @@ show_zsh_plugin_menu() {
   echo "  0) Skip" >&2
   echo "" >&2
   printf '%bEnter choices (e.g. 1,2):%b ' "$BOLD" "$RESET" >&2
-  read -r choices
+  read_tty choices
   echo "$choices"
 }
 
@@ -416,7 +429,7 @@ show_shell_menu() {
   echo "  0) Skip shell configuration" >&2
   echo "" >&2
   printf '%bEnter choice [1-8, 0 to skip]:%b ' "$BOLD" "$RESET" >&2
-  read -r choice
+  read_tty choice
   if [[ -z "$choice" ]]; then
     fail "No shell choice entered."
   fi
