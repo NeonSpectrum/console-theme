@@ -5,9 +5,9 @@
 # Usage:
 #   ./install.sh
 #   bash install.sh
-#   curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh | tr -d '\r' | bash
+#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh)"
 #
-set -eu
+set -euo pipefail
 
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/NeonSpectrum/console-theme/main}"
 
@@ -78,7 +78,7 @@ install_starship() {
     fail "curl is required to install Starship. Please install curl and re-run."
   fi
 
-  curl -sS https://starship.rs/install.sh | tr -d '\r' | sh -s -- -y
+  curl -sS https://starship.rs/install.sh | sh -s -- -y
   ok "Starship installed successfully."
 
   # Ensure ~/.local/bin is on PATH for this session
@@ -220,10 +220,6 @@ print_success() {
 }
 
 main() {
-  if [[ -z "${BASH_VERSION:-}" ]]; then
-    fail "This installer requires bash. Use: curl -fsSL ${REPO_RAW}/install.sh | tr -d '\\r' | bash"
-  fi
-
   local os
   os="$(detect_os)"
 
