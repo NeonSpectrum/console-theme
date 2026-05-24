@@ -32,35 +32,34 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 is_interactive() { [[ -t 0 ]]; }
 
-assert_not_root() {
-  if [[ "$(id -u)" -eq 0 ]] || [[ -n "${SUDO_USER:-}" ]]; then
-    fail "Do not run this installer as root or with sudo. Run as your normal user instead."
-  fi
-}
+is_root() { [[ "$(id -u)" -eq 0 ]]; }
 
 install_zsh() {
-  info "Zsh not found. Attempting to install zsh..."
-
-  if ! command_exists sudo; then
-    fail "sudo is required to install zsh. Install zsh manually, then re-run this script."
+  if ! is_root; then
+    fail "Zsh is not installed. Re-run with sudo to install it, or install zsh manually:
+  Debian/Ubuntu: sudo apt install zsh
+  Fedora:          sudo dnf install zsh
+  Arch:            sudo pacman -S zsh"
   fi
 
+  info "Zsh not found. Installing zsh..."
+
   if command_exists apt-get; then
-    sudo apt-get update -qq
-    sudo apt-get install -y zsh
+    apt-get update -qq
+    apt-get install -y zsh
   elif command_exists apt; then
-    sudo apt update -qq
-    sudo apt install -y zsh
+    apt update -qq
+    apt install -y zsh
   elif command_exists dnf; then
-    sudo dnf install -y zsh
+    dnf install -y zsh
   elif command_exists pacman; then
-    sudo pacman -Sy --noconfirm zsh
+    pacman -Sy --noconfirm zsh
   elif command_exists apk; then
-    sudo apk add zsh
+    apk add zsh
   elif command_exists zypper; then
-    sudo zypper install -y zsh
+    zypper install -y zsh
   elif command_exists yum; then
-    sudo yum install -y zsh
+    yum install -y zsh
   else
     fail "Could not install zsh automatically. Install zsh manually, then re-run this script."
   fi
@@ -285,8 +284,6 @@ print_success() {
 }
 
 main() {
-  assert_not_root
-
   local os
   os="$(detect_os)"
 
