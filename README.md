@@ -12,13 +12,15 @@ A minimal [Starship](https://starship.rs/) prompt setup with optional [Oh My Zsh
 ### Linux / macOS
 
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh)"
+curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh | tr -d '\r' | bash
 ```
 
-Or:
+Or download first (most reliable):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh -o /tmp/install.sh
+tr -d '\r' < /tmp/install.sh > /tmp/install-clean.sh
+bash /tmp/install-clean.sh
 ```
 
 ### Windows (Command Prompt)
@@ -80,6 +82,7 @@ See the [Starship configuration docs](https://starship.rs/config/) for all avail
 
 | Issue | Fix |
 |-------|-----|
+| `invalid option nameipefail` | Windows CRLF line endings — use `tr -d '\r'` in the pipe (see Quick install above) |
 | Icons show as boxes | Install and enable a [Nerd Font](https://www.nerdfonts.com/) in your terminal |
 | `starship: command not found` | Add `~/.local/bin` to your PATH and restart the terminal |
 | Oh My Zsh failed on Linux | Install `zsh` and `git`, then re-run the installer |
