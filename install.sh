@@ -7,6 +7,7 @@
 #   bash install.sh
 #   sh -c "$(curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh)"
 #   SHELL_CHOICE=3 curl -fsSL .../install.sh | bash   # non-interactive
+#   ZSH_PLUGINS=1,2 SHELL_CHOICE=3 curl -fsSL .../install.sh | bash
 #
 set -euo pipefail
 
@@ -159,14 +160,212 @@ setup_bash() {
   append_if_missing "${HOME}/.bashrc" "$STARSHIP_MARKER" 'eval "$(starship init bash)"'
 }
 
+ensure_zsh_installed() {
+  if ! command_exists zsh; then
+    fail "Zsh is not installed. Re-run with sudo to install it, or install zsh manually:
+  Debian/Ubuntu: sudo apt install zsh
+  Fedora:          sudo dnf install zsh
+  Arch:            sudo pacman -S zsh"
+  fi
+}
+
+ensure_zshrc() {
+  local zshrc="${HOME}/.zshrc"
+
+  if [[ -f "$zshrc" ]]; then
+    return 0
+  fi
+
+  info "Creating ~/.zshrc..."
+
+  if [[ -d "${HOME}/.oh-my-zsh" ]]; then
+    cat >"$zshrc" <<'EOF'
+# ~/.zshrc created by install.sh
+export ZSH="$HOME/.oh-my-zsh"
+plugins=(git)
+
+source $ZSH/oh-my-zsh.sh
+EOF
+  else
+    cat >"$zshrc" <<'EOF'
+# ~/.zshrc created by install.sh
+EOF
+  fi
+
+  ok "Created ~/.zshrc"
+}
+
+setup_zsh() {
+  ensure_zsh_installed
+  ensure_zshrc
+  append_if_missing "${HOME}/.zshrc" "$STARSHIP_MARKER" 'eval "$(starship init zsh)"'
+  setup_zsh_plugins
+}
+
 setup_fish() {
   local fish_config="${HOME}/.config/fish/config.fish"
   mkdir -p "$(dirname "$fish_config")"
   append_if_missing "$fish_config" "$STARSHIP_MARKER" "starship init fish | source"
 }
 
-setup_zsh() {
-  append_if_missing "${HOME}/.zshrc" "$STARSHIP_MARKER" 'eval "$(starship init zsh)"'
+install_zsh_autosuggestions() {
+  local plugin_dir="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
+
+  if [[ -d "$plugin_dir" ]]; then
+    ok "zsh-autosuggestions is already installed"
+    return 0
+  fi
+
+  if ! command_exists git; then
+    fail "git is required to install zsh-autosuggestions."
+  fi
+
+  info "Installing zsh-autosuggestions..."
+  git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir"
+  ok "Installed zsh-autosuggestions"
+}
+
+get_zshrc_plugins() {
+  local zshrc="${HOME}/.zshrc"
+  local plugins_line
+
+  plugins_line="$(grep -E '^plugins=\(' "$zshrc" | head -1 || true)"
+  if [[ -z "$plugins_line" ]]; then
+    return 0
+  fi
+
+  local inner="${plugins_line#plugins=(}"
+  inner="${inner%)}"
+  local plugin
+  for plugin in $inner; do
+    [[ -n "$plugin" ]] && echo "$plugin"
+  done
+}
+
+update_zshrc_plugins() {
+  local zshrc="${HOME}/.zshrc"
+  local -a plugins=()
+  local plugin
+
+  while IFS= read -r plugin; do
+    [[ -n "$plugin" ]] && plugins+=("$plugin")
+  done < <(get_zshrc_plugins)
+
+  for plugin in "$@"; do
+    if [[ " ${plugins[*]:-} " != *" ${plugin} "* ]]; then
+      plugins+=("$plugin")
+    fi
+  done
+
+  if [[ ${#plugins[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  local plugins_line="plugins=(${plugins[*]})"
+
+  if grep -qE '^plugins=\(' "$zshrc"; then
+    if [[ "$(uname -s)" == Darwin* ]]; then
+      sed -i '' "s|^plugins=(.*)|${plugins_line}|" "$zshrc"
+    else
+      sed -i "s|^plugins=(.*)|${plugins_line}|" "$zshrc"
+    fi
+  else
+    echo "$plugins_line" >>"$zshrc"
+  fi
+
+  ok "Updated Oh My Zsh plugins: ${plugins[*]}"
+}
+
+show_zsh_plugin_menu() {
+  echo "" >&2
+  printf '%bSelect Oh My Zsh plugins to install:%b\n' "$BOLD" "$RESET" >&2
+  echo "  1) git" >&2
+  echo "  2) zsh-autosuggestions" >&2
+  echo "  0) Skip" >&2
+  echo "" >&2
+  printf '%bEnter choices (e.g. 1,2):%b ' "$BOLD" "$RESET" >&2
+  read -r choices
+  echo "$choices"
+}
+
+resolve_zsh_plugin_choices() {
+  if [[ -n "${ZSH_PLUGINS:-}" ]]; then
+    echo "$ZSH_PLUGINS"
+    return 0
+  fi
+
+  if is_interactive; then
+    show_zsh_plugin_menu
+    return 0
+  fi
+
+  echo ""
+}
+
+parse_zsh_plugin_choices() {
+  local input="${1// /}"
+  local -a selected=()
+  local part
+
+  [[ -z "$input" || "$input" == "0" ]] && return 0
+
+  IFS=',' read -ra parts <<< "$input"
+  for part in "${parts[@]}"; do
+    case "$part" in
+      1)
+        if [[ " ${selected[*]:-} " != *" git "* ]]; then
+          selected+=("git")
+        fi
+        ;;
+      2)
+        if [[ " ${selected[*]:-} " != *" zsh-autosuggestions "* ]]; then
+          selected+=("zsh-autosuggestions")
+        fi
+        ;;
+      *)
+        fail "Invalid plugin choice: ${part}"
+        ;;
+    esac
+  done
+
+  local plugin
+  for plugin in "${selected[@]}"; do
+    echo "$plugin"
+  done
+}
+
+setup_zsh_plugins() {
+  if [[ ! -d "${HOME}/.oh-my-zsh" ]]; then
+    return 0
+  fi
+
+  ensure_zshrc
+
+  local choices plugin
+  choices="$(resolve_zsh_plugin_choices)"
+
+  if [[ -z "${choices// /}" || "$choices" == "0" ]]; then
+    info "Skipped Oh My Zsh plugin setup."
+    return 0
+  fi
+
+  local -a plugins=()
+  while IFS= read -r plugin; do
+    [[ -n "$plugin" ]] && plugins+=("$plugin")
+  done < <(parse_zsh_plugin_choices "$choices")
+
+  if [[ ${#plugins[@]} -eq 0 ]]; then
+    info "Skipped Oh My Zsh plugin setup."
+    return 0
+  fi
+
+  for plugin in "${plugins[@]}"; do
+    if [[ "$plugin" == "zsh-autosuggestions" ]]; then
+      install_zsh_autosuggestions
+    fi
+  done
+
+  update_zshrc_plugins "${plugins[@]}"
 }
 
 setup_ion() {
