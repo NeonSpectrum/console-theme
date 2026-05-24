@@ -8,6 +8,7 @@
 #   sh -c "$(curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh)"
 #   SHELL_CHOICE=3 curl -fsSL .../install.sh | bash   # non-interactive
 #   ZSH_PLUGINS=1,2 SHELL_CHOICE=3 curl -fsSL .../install.sh | bash
+#   SWITCH_SHELL=yes SHELL_CHOICE=3 curl -fsSL .../install.sh | bash
 #
 set -euo pipefail
 
@@ -507,6 +508,106 @@ configure_shell() {
   esac
 }
 
+shell_binary_for_choice() {
+  case "$1" in
+    1) echo "bash" ;;
+    2) echo "fish" ;;
+    3) echo "zsh" ;;
+    4) echo "ion" ;;
+    6) echo "tcsh" ;;
+    *) echo "" ;;
+  esac
+}
+
+get_login_shell() {
+  local user="$1"
+  if command_exists getent; then
+    getent passwd "$user" | cut -d: -f7
+  else
+    grep "^${user}:" /etc/passwd 2>/dev/null | cut -d: -f7
+  fi
+}
+
+resolve_chsh_target_user() {
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    echo "$SUDO_USER"
+  elif [[ "$(id -u)" -eq 0 ]]; then
+    echo "root"
+  else
+    echo "${USER:-$(id -un)}"
+  fi
+}
+
+switch_shell_prompt_answer() {
+  local target_user="$1"
+  local shell_bin="$2"
+  local answer=""
+
+  print_tty "\n"
+  print_tty "${BOLD}Switch default shell for ${target_user} to ${shell_bin}? [y/N]:${RESET} "
+  read_tty answer
+  echo "${answer,,}"
+}
+
+switch_selected_shell() {
+  local choice="$1"
+  local shell_bin
+  shell_bin="$(shell_binary_for_choice "$choice")"
+
+  if [[ -z "$shell_bin" || "$choice" == "0" ]]; then
+    [[ "$choice" != "0" ]] && \
+      info "Selected shell does not support automatic login-shell switching."
+    return 0
+  fi
+
+  local desired_path
+  desired_path="$(command -v "$shell_bin" 2>/dev/null || true)"
+  if [[ -z "$desired_path" ]]; then
+    warn "Cannot switch shell: ${shell_bin} was not found in PATH."
+    return 0
+  fi
+
+  local target_user
+  target_user="$(resolve_chsh_target_user)"
+
+  if [[ "$(id -u)" -eq 0 && -z "${SUDO_USER:-}" ]]; then
+    warn "Running as root: this will change root's login shell, not another user's."
+  fi
+
+  local current_shell
+  current_shell="$(get_login_shell "$target_user")"
+  if [[ "$current_shell" == "$desired_path" ]]; then
+    ok "Default shell for ${target_user} is already ${shell_bin}."
+    return 0
+  fi
+
+  if [[ -n "${SWITCH_SHELL:-}" ]]; then
+    case "${SWITCH_SHELL,,}" in
+      y|yes|true|1) ;;
+      *) info "Skipped default shell switch."; return 0 ;;
+    esac
+  elif can_prompt; then
+    local answer
+    answer="$(switch_shell_prompt_answer "$target_user" "$shell_bin")"
+    case "$answer" in
+      y|yes) ;;
+      *) info "Skipped default shell switch."; return 0 ;;
+    esac
+  else
+    info "Non-interactive mode: skipping default shell switch. Set SWITCH_SHELL=yes to enable."
+    return 0
+  fi
+
+  if ! command_exists chsh; then
+    warn "Cannot switch shell automatically: chsh is not available."
+    return 0
+  fi
+
+  info "Switching default shell for ${target_user} to ${shell_bin}..."
+  chsh -s "$desired_path" "$target_user" \
+    || warn "Failed to switch default shell. Run manually: sudo chsh -s \"$desired_path\" \"$target_user\""
+}
+
 print_success() {
   echo ""
   ok "============================================"
@@ -536,6 +637,7 @@ main() {
 
   resolve_shell_choice
   configure_shell "$SHELL_CHOICE_RESULT"
+  switch_selected_shell "$SHELL_CHOICE_RESULT"
 
   print_success
 }
