@@ -6,6 +6,7 @@
 #   ./install.sh
 #   bash install.sh
 #   sh -c "$(curl -fsSL https://raw.githubusercontent.com/NeonSpectrum/console-theme/main/install.sh)"
+#   SHELL_CHOICE=3 curl -fsSL .../install.sh | bash   # non-interactive
 #
 set -euo pipefail
 
@@ -29,6 +30,45 @@ fail()  { printf '%b%s%b\n' "${RED}" "$*" "${RESET}" >&2; exit 1; }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+is_interactive() { [[ -t 0 ]]; }
+
+assert_not_root() {
+  if [[ "$(id -u)" -eq 0 ]] || [[ -n "${SUDO_USER:-}" ]]; then
+    fail "Do not run this installer as root or with sudo. Run as your normal user instead."
+  fi
+}
+
+install_zsh() {
+  info "Zsh not found. Attempting to install zsh..."
+
+  if ! command_exists sudo; then
+    fail "sudo is required to install zsh. Install zsh manually, then re-run this script."
+  fi
+
+  if command_exists apt-get; then
+    sudo apt-get update -qq
+    sudo apt-get install -y zsh
+  elif command_exists apt; then
+    sudo apt update -qq
+    sudo apt install -y zsh
+  elif command_exists dnf; then
+    sudo dnf install -y zsh
+  elif command_exists pacman; then
+    sudo pacman -Sy --noconfirm zsh
+  elif command_exists apk; then
+    sudo apk add zsh
+  elif command_exists zypper; then
+    sudo zypper install -y zsh
+  elif command_exists yum; then
+    sudo yum install -y zsh
+  else
+    fail "Could not install zsh automatically. Install zsh manually, then re-run this script."
+  fi
+
+  command_exists zsh || fail "Zsh installation failed."
+  ok "Zsh installed successfully."
+}
+
 detect_os() {
   case "$(uname -s)" in
     Linux*)  echo "linux" ;;
@@ -46,11 +86,7 @@ install_oh_my_zsh() {
 
   info "Installing Oh My Zsh..."
   if ! command_exists zsh; then
-    warn "Zsh is not installed. Install zsh first, then re-run this script."
-    warn "  Debian/Ubuntu: sudo apt install zsh"
-    warn "  Fedora:          sudo dnf install zsh"
-    warn "  Arch:            sudo pacman -S zsh"
-    return 1
+    install_zsh
   fi
 
   if [[ -d "${HOME}/.oh-my-zsh" ]]; then
@@ -152,15 +188,12 @@ setup_tcsh() {
 
 setup_nushell() {
   if ! command_exists nu; then
-    warn "Nushell (nu) is not installed. Install it from https://www.nushell.sh/ then re-run."
-    return 1
+    fail "Nushell (nu) is not installed. Install it from https://www.nushell.sh/ then re-run."
   fi
 
   local autoload_dir
-  autoload_dir="$(nu -c '($nu.data-dir | path join "vendor/autoload")' 2>/dev/null)" || {
-    warn "Could not determine Nushell data directory."
-    return 1
-  }
+  autoload_dir="$(nu -c '($nu.data-dir | path join "vendor/autoload")' 2>/dev/null)" || \
+    fail "Could not determine Nushell data directory."
 
   mkdir -p "$autoload_dir"
   starship init nu > "${autoload_dir}/starship.nu"
@@ -186,7 +219,39 @@ show_shell_menu() {
   echo "" >&2
   printf '%bEnter choice [1-8, 0 to skip]:%b ' "$BOLD" "$RESET" >&2
   read -r choice
+  if [[ -z "$choice" ]]; then
+    fail "No shell choice entered."
+  fi
   echo "$choice"
+}
+
+resolve_shell_choice() {
+  if [[ -n "${SHELL_CHOICE:-}" ]]; then
+    echo "$SHELL_CHOICE"
+    return 0
+  fi
+
+  if is_interactive; then
+    show_shell_menu
+    return 0
+  fi
+
+  local shell_name
+  shell_name="$(basename "${SHELL:-}")"
+  case "$shell_name" in
+    bash)   echo 1 ;;
+    fish)   echo 2 ;;
+    zsh)    echo 3 ;;
+    ion)    echo 4 ;;
+    elvish) echo 5 ;;
+    tcsh)   echo 6 ;;
+    nu)     echo 7 ;;
+    xonsh)  echo 8 ;;
+    *)
+      fail "Non-interactive install: set SHELL_CHOICE (1-8) or run in an interactive terminal.
+Example: SHELL_CHOICE=3 curl -fsSL ${REPO_RAW}/install.sh | bash"
+      ;;
+  esac
 }
 
 configure_shell() {
@@ -198,9 +263,9 @@ configure_shell() {
     4) setup_ion ;;
     5) setup_elvish ;;
     6) setup_tcsh ;;
-    7) setup_nushell || warn "Nushell setup failed." ;;
+    7) setup_nushell ;;
     8) setup_xonsh ;;
-    0) warn "Skipped shell configuration." ;;
+    0) info "Skipped shell configuration." ;;
     *) fail "Invalid choice: ${choice}" ;;
   esac
 }
@@ -220,6 +285,8 @@ print_success() {
 }
 
 main() {
+  assert_not_root
+
   local os
   os="$(detect_os)"
 
@@ -228,12 +295,12 @@ main() {
   info "Detected OS: ${os}"
   echo ""
 
-  install_oh_my_zsh "$os" || warn "Oh My Zsh step finished with warnings."
+  install_oh_my_zsh "$os"
   install_starship
   copy_starship_config
 
   local choice
-  choice="$(show_shell_menu)"
+  choice="$(resolve_shell_choice)"
   configure_shell "$choice"
 
   print_success
