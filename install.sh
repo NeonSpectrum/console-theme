@@ -13,6 +13,9 @@ set -euo pipefail
 
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/NeonSpectrum/console-theme/main}"
 
+SHELL_CHOICE_RESULT=""
+ZSH_PLUGIN_CHOICES=""
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 STARSHIP_TOML_SRC="${SCRIPT_DIR}/starship.toml"
 STARSHIP_MARKER="# starship prompt (added by install.sh)"
@@ -32,7 +35,19 @@ fail()  { printf '%b%s%b\n' "${RED}" "$*" "${RESET}" >&2; exit 1; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 is_interactive() {
-  [[ -t 0 ]] || { [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; }
+  [[ -t 0 ]] || can_prompt
+}
+
+can_prompt() {
+  [[ -r /dev/tty && -w /dev/tty ]]
+}
+
+print_tty() {
+  if can_prompt; then
+    printf '%b' "$@" >/dev/tty
+  else
+    printf '%b' "$@" >&2
+  fi
 }
 
 read_tty() {
@@ -290,29 +305,36 @@ update_zshrc_plugins() {
 }
 
 show_zsh_plugin_menu() {
-  echo "" >&2
-  printf '%bSelect Oh My Zsh plugins to install:%b\n' "$BOLD" "$RESET" >&2
-  echo "  1) git" >&2
-  echo "  2) zsh-autosuggestions" >&2
-  echo "  0) Skip" >&2
-  echo "" >&2
-  printf '%bEnter choices (e.g. 1,2):%b ' "$BOLD" "$RESET" >&2
+  local choices=""
+
+  print_tty "\n"
+  print_tty "${BOLD}Select Oh My Zsh plugins to install:${RESET}\n"
+  print_tty "  1) git\n"
+  print_tty "  2) zsh-autosuggestions\n"
+  print_tty "  0) Skip\n"
+  print_tty "\n"
+  print_tty "${BOLD}Enter choices (e.g. 1,2):${RESET} "
   read_tty choices
-  echo "$choices"
+
+  if [[ -z "${choices// /}" ]]; then
+    fail "No plugin choice entered. Choose 1, 2, 1,2, or 0 to skip."
+  fi
+
+  ZSH_PLUGIN_CHOICES="$choices"
 }
 
 resolve_zsh_plugin_choices() {
   if [[ -n "${ZSH_PLUGINS:-}" ]]; then
-    echo "$ZSH_PLUGINS"
+    ZSH_PLUGIN_CHOICES="$ZSH_PLUGINS"
     return 0
   fi
 
-  if is_interactive; then
+  if can_prompt; then
     show_zsh_plugin_menu
     return 0
   fi
 
-  echo ""
+  ZSH_PLUGIN_CHOICES=""
 }
 
 parse_zsh_plugin_choices() {
@@ -354,8 +376,8 @@ setup_zsh_plugins() {
 
   ensure_zshrc
 
-  local choices plugin
-  choices="$(resolve_zsh_plugin_choices)"
+  resolve_zsh_plugin_choices
+  local choices="$ZSH_PLUGIN_CHOICES"
 
   if [[ -z "${choices// /}" || "$choices" == "0" ]]; then
     info "Skipped Oh My Zsh plugin setup."
@@ -416,33 +438,37 @@ setup_xonsh() {
 }
 
 show_shell_menu() {
-  echo "" >&2
-  printf '%bSelect your shell:%b\n' "$BOLD" "$RESET" >&2
-  echo "  1) Bash" >&2
-  echo "  2) Fish" >&2
-  echo "  3) Zsh" >&2
-  echo "  4) Ion" >&2
-  echo "  5) Elvish" >&2
-  echo "  6) Tcsh" >&2
-  echo "  7) Nushell" >&2
-  echo "  8) Xonsh" >&2
-  echo "  0) Skip shell configuration" >&2
-  echo "" >&2
-  printf '%bEnter choice [1-8, 0 to skip]:%b ' "$BOLD" "$RESET" >&2
+  local choice=""
+
+  print_tty "\n"
+  print_tty "${BOLD}Select your shell:${RESET}\n"
+  print_tty "  1) Bash\n"
+  print_tty "  2) Fish\n"
+  print_tty "  3) Zsh\n"
+  print_tty "  4) Ion\n"
+  print_tty "  5) Elvish\n"
+  print_tty "  6) Tcsh\n"
+  print_tty "  7) Nushell\n"
+  print_tty "  8) Xonsh\n"
+  print_tty "  0) Skip shell configuration\n"
+  print_tty "\n"
+  print_tty "${BOLD}Enter choice [1-8, 0 to skip]:${RESET} "
   read_tty choice
+
   if [[ -z "$choice" ]]; then
     fail "No shell choice entered."
   fi
-  echo "$choice"
+
+  SHELL_CHOICE_RESULT="$choice"
 }
 
 resolve_shell_choice() {
   if [[ -n "${SHELL_CHOICE:-}" ]]; then
-    echo "$SHELL_CHOICE"
+    SHELL_CHOICE_RESULT="$SHELL_CHOICE"
     return 0
   fi
 
-  if is_interactive; then
+  if can_prompt; then
     show_shell_menu
     return 0
   fi
@@ -450,14 +476,14 @@ resolve_shell_choice() {
   local shell_name
   shell_name="$(basename "${SHELL:-}")"
   case "$shell_name" in
-    bash)   echo 1 ;;
-    fish)   echo 2 ;;
-    zsh)    echo 3 ;;
-    ion)    echo 4 ;;
-    elvish) echo 5 ;;
-    tcsh)   echo 6 ;;
-    nu)     echo 7 ;;
-    xonsh)  echo 8 ;;
+    bash)   SHELL_CHOICE_RESULT=1 ;;
+    fish)   SHELL_CHOICE_RESULT=2 ;;
+    zsh)    SHELL_CHOICE_RESULT=3 ;;
+    ion)    SHELL_CHOICE_RESULT=4 ;;
+    elvish) SHELL_CHOICE_RESULT=5 ;;
+    tcsh)   SHELL_CHOICE_RESULT=6 ;;
+    nu)     SHELL_CHOICE_RESULT=7 ;;
+    xonsh)  SHELL_CHOICE_RESULT=8 ;;
     *)
       fail "Non-interactive install: set SHELL_CHOICE (1-8) or run in an interactive terminal.
 Example: SHELL_CHOICE=3 curl -fsSL ${REPO_RAW}/install.sh | bash"
@@ -508,9 +534,8 @@ main() {
   install_starship
   copy_starship_config
 
-  local choice
-  choice="$(resolve_shell_choice)"
-  configure_shell "$choice"
+  resolve_shell_choice
+  configure_shell "$SHELL_CHOICE_RESULT"
 
   print_success
 }
