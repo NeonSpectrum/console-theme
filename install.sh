@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Install Oh My Zsh (Linux only), Starship, and copy starship.toml for your shell.
+# Install your preferred shell, optionally set it as default, then install Starship
+# and copy starship.toml.
 #
 # Usage:
 #   ./install.sh
@@ -64,38 +65,56 @@ read_tty() {
 
 is_root() { [[ "$(id -u)" -eq 0 ]]; }
 
-install_zsh() {
-  if ! is_root; then
-    fail "Zsh is not installed. Re-run with sudo to install it, or install zsh manually:
-  Debian/Ubuntu: sudo apt install zsh
-  Fedora:          sudo dnf install zsh
-  Arch:            sudo pacman -S zsh"
+package_name_for_shell() {
+  case "$1" in
+    bash)   echo "bash" ;;
+    fish)   echo "fish" ;;
+    zsh)    echo "zsh" ;;
+    ion)    echo "ion" ;;
+    tcsh)   echo "tcsh" ;;
+    *)      echo "" ;;
+  esac
+}
+
+install_shell_package() {
+  local shell_bin="$1"
+  local pkg
+  pkg="$(package_name_for_shell "$shell_bin")"
+
+  if [[ -z "$pkg" ]]; then
+    fail "No known package name for ${shell_bin}. Install it manually."
   fi
 
-  info "Zsh not found. Installing zsh..."
+  if ! is_root; then
+    fail "${shell_bin} is not installed. Re-run with sudo to install it, or install it manually."
+  fi
+
+  info "${shell_bin} not found. Installing ${pkg}..."
 
   if command_exists apt-get; then
-    apt-get update -qq
-    apt-get install -y zsh
+    apt-get update -qq && apt-get install -y "$pkg"
   elif command_exists apt; then
-    apt update -qq
-    apt install -y zsh
+    apt update -qq && apt install -y "$pkg"
   elif command_exists dnf; then
-    dnf install -y zsh
+    dnf install -y "$pkg"
   elif command_exists pacman; then
-    pacman -Sy --noconfirm zsh
+    pacman -Sy --noconfirm "$pkg"
   elif command_exists apk; then
-    apk add zsh
+    apk add "$pkg"
   elif command_exists zypper; then
-    zypper install -y zsh
+    zypper install -y "$pkg"
   elif command_exists yum; then
-    yum install -y zsh
+    yum install -y "$pkg"
   else
-    fail "Could not install zsh automatically. Install zsh manually, then re-run this script."
+    fail "Could not install ${pkg} automatically. Install it manually, then re-run this script."
   fi
 
-  command_exists zsh || fail "Zsh installation failed."
-  ok "Zsh installed successfully."
+  command_exists "$shell_bin" || fail "${shell_bin} installation failed."
+  ok "${shell_bin} installed successfully."
+}
+
+install_zsh() {
+  install_shell_package "zsh"
 }
 
 detect_os() {
@@ -622,22 +641,53 @@ print_success() {
   echo ""
 }
 
+install_shell() {
+  local choice="$1"
+  local os="$2"
+
+  case "$choice" in
+    3)
+      if [[ "$os" == "linux" ]]; then
+        install_oh_my_zsh "$os"
+      else
+        if ! command_exists zsh; then
+          install_zsh
+        else
+          ok "Zsh is already installed."
+        fi
+      fi
+      ;;
+    0) ;;
+    *)
+      local shell_bin
+      shell_bin="$(shell_binary_for_choice "$choice")"
+      if [[ -n "$shell_bin" ]]; then
+        if command_exists "$shell_bin"; then
+          ok "${shell_bin} is already installed."
+        else
+          install_shell_package "$shell_bin"
+        fi
+      fi
+      ;;
+  esac
+}
+
 main() {
   local os
   os="$(detect_os)"
 
   echo ""
-  info "Oh My Zsh + Starship installer"
+  info "Console Theme installer"
   info "Detected OS: ${os}"
   echo ""
 
-  install_oh_my_zsh "$os"
+  resolve_shell_choice
+  install_shell "$SHELL_CHOICE_RESULT" "$os"
+  switch_selected_shell "$SHELL_CHOICE_RESULT"
+
   install_starship
   copy_starship_config
-
-  resolve_shell_choice
   configure_shell "$SHELL_CHOICE_RESULT"
-  switch_selected_shell "$SHELL_CHOICE_RESULT"
 
   print_success
 }
