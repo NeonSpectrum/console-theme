@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-REM Install Starship on Windows and copy starship.toml for your shell.
+REM Install your preferred shell config, then install Starship and copy starship.toml.
 REM
 REM Usage:
 REM   install.bat
@@ -15,8 +15,12 @@ set "STARSHIP_TOML_SRC=%SCRIPT_DIR%\starship.toml"
 set "STARSHIP_MARKER=# starship prompt (added by install.bat)"
 
 echo.
-echo [INFO] Starship installer for Windows
+echo [INFO] Console Theme installer for Windows
 echo.
+
+call :show_shell_menu
+call :configure_shell
+if errorlevel 1 exit /b 1
 
 call :install_starship
 if errorlevel 1 exit /b 1
@@ -24,8 +28,7 @@ if errorlevel 1 exit /b 1
 call :copy_starship_config
 if errorlevel 1 exit /b 1
 
-call :show_shell_menu
-call :configure_shell
+call :setup_starship_init
 if errorlevel 1 exit /b 1
 
 call :print_success
@@ -108,15 +111,22 @@ set /p "SHELL_CHOICE=Enter choice [1-3, 0 to skip]: "
 goto :eof
 
 :configure_shell
-if "%SHELL_CHOICE%"=="1" goto :setup_powershell
-if "%SHELL_CHOICE%"=="2" goto :setup_elvish
-if "%SHELL_CHOICE%"=="3" goto :setup_cmd
+if "%SHELL_CHOICE%"=="1" goto :eof
+if "%SHELL_CHOICE%"=="2" goto :eof
+if "%SHELL_CHOICE%"=="3" goto :eof
 if "%SHELL_CHOICE%"=="0" (
-    echo [WARN] Skipped shell configuration.
+    echo [INFO] Skipped shell configuration.
     goto :eof
 )
 echo [ERROR] Invalid choice: %SHELL_CHOICE%
 exit /b 1
+
+:setup_starship_init
+if "%SHELL_CHOICE%"=="1" goto :setup_powershell
+if "%SHELL_CHOICE%"=="2" goto :setup_elvish
+if "%SHELL_CHOICE%"=="3" goto :setup_cmd
+if "%SHELL_CHOICE%"=="0" goto :eof
+goto :eof
 
 :setup_powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
